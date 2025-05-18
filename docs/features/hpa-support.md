@@ -1,8 +1,30 @@
 # Horizontal Pod Autoscaling
-Horizontal Pod Autoscaling (HPA) automatically scales the number of pods in owned by a Kubernetes resource based on observed CPU utilization or user-configured metrics. In order to accomplish this behavior, HPA only supports resources with the scale endpoint enabled with a couple of required fields. The scale endpoint allows the HPA to understand the current state of a resource and modify the resource to scale it appropriately.  Argo Rollouts added support for the scale endpoint in the `0.3.0` release. After being modified by the HPA, the Argo Rollouts controller is responsible for reconciling that change in replicas. Since the strategies within a Rollout are very different, the Argo Rollouts controller handles the scale endpoint differently for various strategies. Below is the behavior for the different strategies:
+Horizontal Pod Autoscaling (HPA) automatically scales the number of pods owned by a Kubernetes resource based on observed CPU utilization or user-configured metrics. In order to accomplish this behavior, HPA only supports resources with the scale endpoint enabled with a couple of required fields. The scale endpoint allows the HPA to understand the current state of a resource and modify the resource to scale it appropriately.  Argo Rollouts added support for the scale endpoint in the `0.3.0` release. After being modified by the HPA, the Argo Rollouts controller is responsible for reconciling that change in replicas. Since the strategies within a Rollout are very different, the Argo Rollouts controller handles the scale endpoint differently for various strategies. 
 
-## Blue Green
-The HPA will scale rollouts using the `BlueGreen` strategy using the metrics from the ReplicaSet receiving traffic from the active service. When the HPA changes the replicas count, the Argo Rollouts controller will first scale up the ReplicaSet receiving traffic from the active service before ReplicaSet receiving traffic from the preview service. The controller will scale up the ReplicaSet receiving traffic from the preview service to prepare it for when the rollout switches the preview to active.  If there are no ReplicaSets receiving from the active service, the controller will use all the pods that match the base selector to determine scaling events. In that case, the controller will scale up the latest ReplicaSet to the new count and scale down the older ReplicaSets.
+## Argo Rollouts and HPA Behavior
+Argo Rollouts overrides the default HPA behavior when specific properties are used during the rollout. The configurations depend on the rollout strategy and give you more control over how many pods run during different stages of the rollout. The behavior for each strategy when specific properties are used during the rollout is described below:
+
+## Blue Green Strategy
+The HPA will scale rollouts using the `BlueGreen` strategy using the metrics from the ReplicaSet receiving traffic from the active service. When the HPA changes the replica count, the Argo Rollouts controller will first scale up the ReplicaSet receiving traffic from the active service before the ReplicaSet receiving traffic from the preview service. The controller will scale up the ReplicaSet receiving traffic from the preview service to prepare it for when the rollout switches the preview to active.  If there are no ReplicaSets receiving from the active service, the controller will use all the pods that match the base selector to determine scaling events. In that case, the controller will scale up the latest ReplicaSet to the new count and scale down the older ReplicaSets.
+
+## Using property `previewReplicaCount` with HPA
+The `previewReplicaCount` property allows you to set a fixed number of replicas (pods) for the preview (new) version during a Blue/Green deployment, which can be different from the stable version's replica count.
+
+```yaml
+spec:
+  replicas: 10    # Base replica count for stable
+  strategy:
+    blueGreen:
+      previewService: argo-rollouts-preview-service 
+      activeService: argo-rollouts-stable-service 
+      previewReplicaCount: 2      # Preview version will have 2 replicas
+```
+When `previewReplicaCount` is used alongside HPA:
+
+1. Argo Rollouts takes precedence over HPA during the progressive delivery operations.
+2. The preview version will maintain the number of replicas specified by previewReplicaCount.
+3. HPA continues to operate on the stable ReplicaSet.
+4. After full promotion, the new stable version becomes under HPA control.
 
 ## Canary (ReplicaSet based)
 The HPA will scale rollouts using the `Canary` Strategy using the metrics of all the ReplicasSets within the rollout. Since the Argo Rollouts controller does not control the service that sends traffic to those ReplicaSets, it assumes that all the ReplicaSets in the rollout are receiving traffic.
